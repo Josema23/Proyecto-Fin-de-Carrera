@@ -1,0 +1,104 @@
+#!/usr/bin/env python
+"""
+Play MIDI file on output port and starts de sequencer
+
+Example:
+
+    mido-play some_file.mid
+
+Todo:
+
+  - add option for printing messages
+"""
+from __future__ import print_function, division
+import sys
+import argparse
+import mido
+import os
+from threading import Thread
+from mido import MidiFile, Message, tempo2bpm
+import time
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    arg = parser.add_argument
+
+    arg('-o', '--output-port',
+        help='Mido port to send output to')
+
+    arg('-m', '--print-messages',
+        dest='print_messages',
+        action='store_true',
+        default=False,
+        help='Print messages as they are played back')
+
+    arg('-q', '--quiet',
+        dest='quiet',
+        action='store_true',
+        default=False,
+        help='print nothing')
+
+    arg('files',
+        metavar='FILE',
+        nargs='+',
+        help='MIDI file to play')
+
+    return parser.parse_args()
+
+def play_file(outport, filename, print_messages):
+
+    midi_file = MidiFile(filename)
+
+    print('Playing {}.'.format(midi_file.filename))
+    length = midi_file.length
+    print('Song length: {} minutes, {} seconds.'.format(
+            int(length / 60),
+            int(length % 60)))
+    print('Tracks:')
+    for i, track in enumerate(midi_file.tracks):
+        print('  {:2d}: {!r}'.format(i, track.name.strip()))
+
+    for message in midi_file.play(meta_messages=True):
+        if print_messages:
+            sys.stdout.write(repr(message) + '\n')
+            sys.stdout.flush()
+
+        if isinstance(message, Message):
+            outport.send(message)
+        elif message.type == 'set_tempo':
+            print('Tempo changed to {:.1f} BPM.'.format(
+                tempo2bpm(message.tempo)))
+
+    print()
+
+def main():
+    PROCNAME = "timidity"
+    try:
+        tt=Thread(target=os.system, args=("timidity -iA",))           #Hilo que inicia la llamada al sistema para iniciar el secuenciador
+        tt.start()
+        time.sleep(1)
+        with mido.open_output('TiMidity port 0') as outport:
+            print('Using output {!r}.'.format(outport.name))
+            outport.reset()
+            try:
+                for filename in args.files:
+                    #play_file(outport,filename,args.print_messages)
+                    t=Thread(target=play_file,args=(outport, filename, args.print_messages))         #Hilo que ejecuta la función play_file(), que reproduce el MIDI
+                    t.start()
+                    t.join()
+                    os.system("killall -9 timidity");
+                    tt.join()
+            finally:
+                print()
+                outport.reset()
+    except KeyboardInterrupt:
+        pass
+
+args = parse_args()
+
+if args.quiet:
+    def print(*args):
+        pass
+
+main()
+os.system("killall -9 timidity");
